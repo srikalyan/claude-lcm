@@ -17,7 +17,8 @@ When a session grows beyond comfortable context size, `claude-lcm`:
 3. **Condenses summaries** into higher-level DAG nodes as they accumulate
 4. **Assembles active context** each turn: summaries + recent raw messages (fresh tail)
 5. **Provides retrieval tools** (`lcm_grep`, `lcm_describe`, `lcm_expand_query`) so the agent can search and recall details from compacted history
-6. **Writes checkpoints** for cross-session continuity
+6. **Processes large datasets** via `lcm_llm_map` and `lcm_agentic_map` (operator-level recursion)
+7. **Writes checkpoints** for cross-session continuity
 
 Nothing is lost. The agent that never forgets — because it doesn't.
 
@@ -54,8 +55,8 @@ See [`.claude/skills/claude-lcm/references/architecture.md`](.claude/skills/clau
 # Copy the skill into your global Claude Code skills directory
 cp -r .claude/skills/claude-lcm ~/.claude/skills/
 
-# Make scripts executable
-chmod +x scripts/*.sh
+# Copy scripts to a location on your PATH (or reference them directly)
+cp -r scripts/ ~/.claude-lcm/scripts/
 ```
 
 Claude Code will auto-discover the skill. Invoke it with `/claude-lcm` or describe your need naturally — Claude will load the skill when context management is relevant.
@@ -69,11 +70,8 @@ cp -r .claude/skills/claude-lcm /your/project/.claude/skills/
 
 ### Prerequisites
 
-- Claude Code
-- `sqlite3` CLI (`brew install sqlite3` on macOS)
+- Claude Code (with `claude` CLI on PATH)
 - `python3` (stdlib only, no pip installs needed)
-- `curl` (for LLM API calls in compaction scripts)
-- `openssl` (for ID generation)
 
 ---
 
@@ -82,55 +80,76 @@ cp -r .claude/skills/claude-lcm /your/project/.claude/skills/
 ### Initialize a session
 
 ```bash
-bash scripts/lcm_init.sh
+python3 scripts/lcm_init.py
 source ~/.claude-lcm/session.env
 ```
 
 ### Check context health
 
 ```bash
-bash scripts/lcm_status.sh
+python3 scripts/lcm_status.py
 ```
 
 ### Compact when context is filling up
 
 ```bash
-bash scripts/lcm_compact.sh          # full pass (leaf + condensation)
-bash scripts/lcm_compact.sh --mode leaf  # leaf only
-bash scripts/lcm_compact.sh --dry-run   # preview without writing
+python3 scripts/lcm_compact.py          # full pass (leaf + condensation)
+python3 scripts/lcm_compact.py --mode leaf  # leaf only
+python3 scripts/lcm_compact.py --dry-run   # preview without writing
 ```
 
 ### Search history
 
 ```bash
-bash scripts/lcm_grep.sh "database migration"
-bash scripts/lcm_grep.sh "API threshold" --scope summaries
-bash scripts/lcm_grep.sh "config" --mode regex --limit 20
+python3 scripts/lcm_grep.py "database migration"
+python3 scripts/lcm_grep.py "API threshold" --scope summaries
+python3 scripts/lcm_grep.py "config" --mode regex --limit 20
 ```
 
 ### Inspect a summary or file
 
 ```bash
-bash scripts/lcm_describe.sh sum_abc123
-bash scripts/lcm_describe.sh file_xyz789
+python3 scripts/lcm_describe.py sum_abc123
+python3 scripts/lcm_describe.py file_xyz789
 ```
 
 ### Answer a focused recall question
 
 ```bash
-bash scripts/lcm_expand_query.sh \
+python3 scripts/lcm_expand_query.py \
   --prompt "What was the final decision on the compaction threshold?" \
   --query "compaction threshold"
+```
+
+### Process a dataset (LLM-Map)
+
+```bash
+python3 scripts/lcm_llm_map.py \
+  --input data.jsonl \
+  --output results.jsonl \
+  --prompt "Extract entities from this text" \
+  --schema schema.json \
+  --concurrency 16
+```
+
+### Process with multi-step reasoning (Agentic-Map)
+
+```bash
+python3 scripts/lcm_agentic_map.py \
+  --input tasks.jsonl \
+  --output results.jsonl \
+  --prompt "Analyze this repository" \
+  --concurrency 4 --read-only
 ```
 
 ### Session handoff
 
 ```bash
 # Before ending a long session
-bash scripts/lcm_checkpoint.sh
+python3 scripts/lcm_checkpoint.py
 
 # On next session start
-bash scripts/lcm_resume.sh
+python3 scripts/lcm_resume.py
 ```
 
 ---
@@ -149,7 +168,7 @@ Set via environment variables before running scripts (or add to your shell profi
 | `LCM_CONDENSED_TARGET_TOKENS` | `2000` | Target tokens for condensed summaries |
 | `LCM_CONDENSED_MIN_FANOUT` | `4` | Min summaries before condensation |
 | `LCM_LARGE_FILE_THRESHOLD` | `25000` | Files above this stored externally |
-| `LCM_SUMMARY_MODEL` | `claude-haiku-4-5-20251001` | Model used for summarization |
+| `LCM_SUMMARY_MODEL` | (inherit parent) | Model for summarization (empty = parent) |
 | `LCM_TOKEN_BUDGET` | `200000` | Total context budget estimate |
 
 ---
@@ -167,17 +186,21 @@ claude-lcm/
 │               ├── tools.md               # Tool interface specs
 │               └── prompts.md             # Depth-aware summarization prompts
 ├── scripts/
-│   ├── lcm_init.sh                        # Initialize SQLite store + session
-│   ├── lcm_ingest.sh                      # Persist a message to immutable store
-│   ├── lcm_status.sh                      # Check context health
-│   ├── lcm_compact.sh                     # Run compaction (leaf + condensation)
-│   ├── lcm_grep.sh                        # Search messages + summaries
-│   ├── lcm_describe.sh                    # Inspect a summary or file by ID
-│   ├── lcm_expand_query.sh                # Deep recall via focused question
-│   ├── lcm_checkpoint.sh                  # Write session checkpoint
-│   └── lcm_resume.sh                      # Resume from checkpoint
+│   ├── lcm_common.py                     # Shared utilities (DB, config, claude -p)
+│   ├── lcm_init.py                       # Initialize SQLite store + session
+│   ├── lcm_ingest.py                     # Persist a message to immutable store
+│   ├── lcm_status.py                     # Check context health
+│   ├── lcm_compact.py                    # Run compaction (leaf + condensation)
+│   ├── lcm_grep.py                       # Search messages + summaries
+│   ├── lcm_describe.py                   # Inspect a summary or file by ID
+│   ├── lcm_expand.py                     # Raw DAG expansion (sub-agent only)
+│   ├── lcm_expand_query.py               # Deep recall via focused question
+│   ├── lcm_llm_map.py                    # LLM-Map: parallel stateless processing
+│   ├── lcm_agentic_map.py                # Agentic-Map: parallel sub-agent sessions
+│   ├── lcm_checkpoint.py                 # Write session checkpoint
+│   └── lcm_resume.py                     # Resume from checkpoint
 ├── docs/
-│   └── design-notes.md                    # Extended design rationale
+│   └── design-notes.md                   # Extended design rationale
 └── README.md
 ```
 
@@ -193,6 +216,7 @@ claude-lcm/
 | Cross-session continuity | Manual CLAUDE.md | Checkpoint + resume |
 | Large file handling | Fills context | External store + Exploration Summary |
 | Compaction reliability | Model-dependent | Three-level escalation (guaranteed) |
+| Dataset processing | Model writes loops | LLM-Map / Agentic-Map operators |
 
 ---
 

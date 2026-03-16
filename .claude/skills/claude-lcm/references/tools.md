@@ -1,6 +1,6 @@
 # LCM Tool Interfaces
 
-All tools are bash scripts in the `scripts/` directory.
+All tools are Python scripts in the `scripts/` directory.
 Invoke them directly from Claude Code tool calls.
 
 ---
@@ -10,7 +10,7 @@ Invoke them directly from Claude Code tool calls.
 Initialize the LCM store for a new session.
 
 ```bash
-bash scripts/lcm_init.sh [--db PATH] [--session-id ID]
+python3 scripts/lcm_init.py [--db PATH] [--session-id ID]
 ```
 
 **Output:**
@@ -23,7 +23,7 @@ Conversation ID: conv_def456
 
 Creates `~/.claude-lcm/lcm.db` if it doesn't exist.
 Creates a new conversation record and returns IDs.
-Safe to run multiple times (idempotent).
+Safe to run multiple times (idempotent schema creation).
 
 ---
 
@@ -32,10 +32,10 @@ Safe to run multiple times (idempotent).
 Persist a message into the immutable store.
 
 ```bash
-bash scripts/lcm_ingest.sh --role user|assistant|tool \
-                            --content "..." \
-                            [--conversation-id ID] \
-                            [--tokens N]
+python3 scripts/lcm_ingest.py --role user|assistant|tool \
+                               --content "..." \
+                               [--conversation-id ID] \
+                               [--tokens N]
 ```
 
 **Output:** `message_id: msg_xyz789`
@@ -50,7 +50,7 @@ You rarely need to call this manually.
 Report current context health.
 
 ```bash
-bash scripts/lcm_status.sh [--conversation-id ID]
+python3 scripts/lcm_status.py [--conversation-id ID]
 ```
 
 **Output:**
@@ -71,22 +71,16 @@ Status:           OK — no compaction needed
 Run a compaction pass.
 
 ```bash
-bash scripts/lcm_compact.sh [--conversation-id ID] \
-                             [--mode leaf|full] \
-                             [--dry-run]
+python3 scripts/lcm_compact.py [--conversation-id ID] \
+                                [--mode leaf|full] \
+                                [--dry-run]
 ```
 
 **Modes:**
 - `leaf`: compact raw messages into leaf summaries only
 - `full`: leaf pass + condensation up the DAG (default)
 
-**Output:**
-```
-Compaction complete
-Leaf summaries created: 2
-Condensed summaries created: 1
-Tokens saved: ~14,200
-```
+Uses `claude -p` for summarization (inherits parent model by default).
 
 ---
 
@@ -95,29 +89,18 @@ Tokens saved: ~14,200
 Search the immutable store.
 
 ```bash
-bash scripts/lcm_grep.sh PATTERN \
-                          [--scope messages|summaries|both] \
-                          [--mode regex|fulltext] \
-                          [--conversation-id ID] \
-                          [--all-conversations] \
-                          [--since ISO_DATE] \
-                          [--before ISO_DATE] \
-                          [--limit N]
+python3 scripts/lcm_grep.py PATTERN \
+                             [--scope messages|summaries|both] \
+                             [--mode regex|fulltext] \
+                             [--conversation-id ID] \
+                             [--all-conversations] \
+                             [--since ISO_DATE] \
+                             [--before ISO_DATE] \
+                             [--limit N]
 ```
 
-**Output:**
-```
-Found 3 matches:
-
-[msg_abc / 2026-02-17 09:12:03 / user]
-"...the database migration threshold was set to 25000..."
-
-[sum_def / depth=0 / 2026-02-17 10:00:00–11:30:00]
-"...configuration: LCM_LEAF_CHUNK_TOKENS=25000..."
-```
-
-Results are paginated (default limit 50).
-Grouped by the summary node that currently covers each match.
+Regex mode uses Python `re` module (works on all systems).
+Fulltext mode uses SQLite FTS5.
 
 ---
 
@@ -126,37 +109,10 @@ Grouped by the summary node that currently covers each match.
 Inspect a summary node or large file by ID.
 
 ```bash
-bash scripts/lcm_describe.sh ID
+python3 scripts/lcm_describe.py ID
 ```
 
-**Output for a summary:**
-```
-ID:          sum_abc123
-Kind:        condensed
-Depth:       1
-Tokens:      1,847
-Descendants: 8 messages
-Time range:  2026-02-17 07:37 → 15:43
-Parents:     sum_def456, sum_ghi789
-
-Content:
-[full summary text]
-
-Expand for details about: database migration, config tuning, API auth
-```
-
-**Output for a file:**
-```
-ID:          file_xyz789
-Path:        /Users/user/project/data.csv
-Stored:      ~/.claude-lcm/files/conv_abc/file_xyz789.csv
-MIME:        text/csv
-Tokens:      ~84,000 (too large for context)
-
-Exploration Summary:
-CSV with 12 columns, 15,000 rows. Schema: id (int), name (str),
-created_at (datetime), status (enum: active|inactive|pending)...
-```
+Accepts `sum_*` (summary) or `file_*` (large file) IDs.
 
 ---
 
@@ -166,7 +122,7 @@ Expand a summary node back to its source messages.
 **Restricted to sub-agents.** Main agent should use `lcm_expand_query` instead.
 
 ```bash
-bash scripts/lcm_expand.sh SUMMARY_ID [--max-tokens N]
+python3 scripts/lcm_expand.py SUMMARY_ID [--max-tokens N]
 ```
 
 **Output:** The full source messages covered by this summary.
@@ -176,13 +132,13 @@ bash scripts/lcm_expand.sh SUMMARY_ID [--max-tokens N]
 ## lcm_expand_query
 
 Deep recall via focused question. Safe for main agent use.
-Internally delegates expansion to a sub-agent to avoid context flooding.
+Internally finds relevant summaries and uses `claude -p` to answer.
 
 ```bash
-bash scripts/lcm_expand_query.sh --prompt "What migration strategy was decided?" \
-                                  [--query "database migration"] \
-                                  [--summary-ids "sum_abc,sum_def"] \
-                                  [--max-tokens 2000]
+python3 scripts/lcm_expand_query.py --prompt "What migration strategy was decided?" \
+                                     [--query "database migration"] \
+                                     [--summary-ids "sum_abc,sum_def"] \
+                                     [--max-tokens 2000]
 ```
 
 **Output:** A compact answer with cited summary IDs.
@@ -194,35 +150,10 @@ bash scripts/lcm_expand_query.sh --prompt "What migration strategy was decided?"
 Write a session checkpoint file before ending a long session.
 
 ```bash
-bash scripts/lcm_checkpoint.sh [--output .lcm-checkpoint.md]
+python3 scripts/lcm_checkpoint.py [--output .lcm-checkpoint.md]
 ```
 
 **Output:** Writes `.lcm-checkpoint.md` to workspace root.
-
-Checkpoint format:
-```markdown
-# LCM Session Checkpoint
-Generated: 2026-02-17T16:42:00
-
-## Session Info
-- Session ID: sess_abc123
-- Conversation ID: conv_def456
-- DB: ~/.claude-lcm/lcm.db
-
-## Context State
-- Total messages: 47
-- Summaries: 3 leaf, 1 condensed
-- Active context: ~68k tokens
-
-## Active Work
-[description of what was in progress]
-
-## Key Decisions
-[bullet list of architectural decisions made]
-
-## Resume Instructions
-Run: bash scripts/lcm_resume.sh
-```
 
 ---
 
@@ -231,8 +162,48 @@ Run: bash scripts/lcm_resume.sh
 Resume a session from a checkpoint.
 
 ```bash
-bash scripts/lcm_resume.sh [--checkpoint .lcm-checkpoint.md]
+python3 scripts/lcm_resume.py [--checkpoint .lcm-checkpoint.md]
 ```
 
 Reads the checkpoint, validates the DB is accessible, and reconstructs
 working state summary for the active context.
+
+---
+
+## lcm_llm_map
+
+Process items in a JSONL file via parallel `claude -p` calls.
+Implements the LLM-Map operator from the LCM paper.
+
+```bash
+python3 scripts/lcm_llm_map.py \
+  --input data.jsonl \
+  --output results.jsonl \
+  --prompt "Extract entities from: " \
+  --schema output_schema.json \
+  --concurrency 16 \
+  --max-retries 3
+```
+
+Each item is a single stateless LLM call. The engine handles iteration,
+concurrency, schema validation, and retries.
+
+---
+
+## lcm_agentic_map
+
+Process items via full claude sub-agent sessions.
+Implements the Agentic-Map operator from the LCM paper.
+
+```bash
+python3 scripts/lcm_agentic_map.py \
+  --input tasks.jsonl \
+  --output results.jsonl \
+  --prompt "Analyze this repository" \
+  --concurrency 4 \
+  --read-only
+```
+
+Each item gets a full sub-agent session with tool access (file I/O, code execution).
+Use `--read-only` to restrict agents to read-only operations.
+Lower default concurrency (4) than LLM-Map since each agent is heavier.

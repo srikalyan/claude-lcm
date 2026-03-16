@@ -15,7 +15,7 @@ description: >
 # Claude LCM — Lossless Context Management
 
 A Claude Code skill that ports the LCM architecture (from the Voltropy paper) natively
-into Claude Code using SQLite + bash scripts. No OpenClaw required.
+into Claude Code using SQLite + Python scripts. No OpenClaw required.
 
 ## Core Concepts
 
@@ -36,8 +36,9 @@ You are operating as the LCM skill. Your responsibilities:
 1. **Initialize** the LCM store if it doesn't exist for this session
 2. **Decide** whether compaction is needed (check token thresholds)
 3. **Compact** older messages into summary nodes using the three-level escalation protocol
-4. **Answer recall queries** using lcm_grep and lcm_expand
-5. **Handoff** cleanly between sessions via checkpoint files
+4. **Answer recall queries** using lcm_grep and lcm_expand_query
+5. **Process large datasets** using lcm_llm_map or lcm_agentic_map
+6. **Handoff** cleanly between sessions via checkpoint files
 
 Read `references/architecture.md` for the full DAG and compaction design.
 Read `references/tools.md` for tool interface specifications.
@@ -48,7 +49,7 @@ Read `references/prompts.md` for depth-aware summarization prompts.
 ### Initialize for a new session
 
 ```bash
-bash scripts/lcm_init.sh
+python3 scripts/lcm_init.py
 ```
 
 This creates `~/.claude-lcm/lcm.db` with the full schema and prints the session ID.
@@ -56,7 +57,7 @@ This creates `~/.claude-lcm/lcm.db` with the full schema and prints the session 
 ### Check context health
 
 ```bash
-bash scripts/lcm_status.sh
+python3 scripts/lcm_status.py
 ```
 
 Prints: message count, estimated token usage, compaction threshold status, and whether
@@ -65,7 +66,7 @@ a compaction pass is recommended.
 ### Compact context
 
 ```bash
-bash scripts/lcm_compact.sh
+python3 scripts/lcm_compact.py
 ```
 
 Runs a leaf compaction pass over messages outside the fresh tail. If summaries are
@@ -74,17 +75,39 @@ accumulating, also runs a condensation pass.
 ### Search history
 
 ```bash
-bash scripts/lcm_grep.sh "database migration"
-bash scripts/lcm_grep.sh "config threshold" --scope summaries
+python3 scripts/lcm_grep.py "database migration"
+python3 scripts/lcm_grep.py "config threshold" --scope summaries
 ```
 
 ### Expand a summary
 
 ```bash
-bash scripts/lcm_expand.sh sum_abc123
+python3 scripts/lcm_expand.py sum_abc123
 ```
 
-Returns the source messages behind a summary node.
+Returns the source messages behind a summary node. **Sub-agent only** — main agent
+should use `lcm_expand_query.py` instead.
+
+### Process a dataset (LLM-Map)
+
+```bash
+python3 scripts/lcm_llm_map.py \
+  --input data.jsonl \
+  --output results.jsonl \
+  --prompt "Extract entities from this text" \
+  --schema schema.json \
+  --concurrency 16
+```
+
+### Process with multi-step reasoning (Agentic-Map)
+
+```bash
+python3 scripts/lcm_agentic_map.py \
+  --input tasks.jsonl \
+  --output results.jsonl \
+  --prompt "Analyze this codebase" \
+  --concurrency 4
+```
 
 ## Compaction Protocol
 
@@ -113,6 +136,7 @@ This ensures the model always has enough recent context for continuity.
 | `LCM_LEAF_TARGET_TOKENS` | 1200 | Target tokens for leaf summaries |
 | `LCM_CONDENSED_TARGET_TOKENS` | 2000 | Target tokens for condensed summaries |
 | `LCM_LARGE_FILE_THRESHOLD` | 25000 | Files above this stored externally |
+| `LCM_SUMMARY_MODEL` | (inherit parent) | Model for summarization (empty = parent model) |
 
 ## DAG Structure
 
@@ -131,13 +155,13 @@ Each level uses a different summarization prompt strategy (see `references/promp
 Before ending a long session, always write a checkpoint:
 
 ```bash
-bash scripts/lcm_checkpoint.sh
+python3 scripts/lcm_checkpoint.py
 ```
 
 This writes `.lcm-checkpoint.md` to the workspace root. On resume:
 
 ```bash
-bash scripts/lcm_resume.sh
+python3 scripts/lcm_resume.py
 ```
 
 Reads the checkpoint and reconstructs working state from the immutable store.
@@ -146,7 +170,7 @@ Reads the checkpoint and reconstructs working state from the immutable store.
 
 Files over `LCM_LARGE_FILE_THRESHOLD` tokens are stored externally and replaced in
 context with a compact Exploration Summary. The agent retains awareness of the file
-without loading it. Use `lcm_describe` to inspect stored files.
+without loading it. Use `lcm_describe.py` to inspect stored files.
 
 ## Sub-agent Scope Guard
 
