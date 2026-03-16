@@ -1,0 +1,34 @@
+{
+  "name": "claude-lcm",
+  "version": "0.1.0",
+  "description": "Lossless Context Management for Claude Code — deterministic, DAG-backed memory for long agentic sessions",
+  "author": "srikalyan",
+  "license": "MIT",
+  "repository": "https://github.com/srikalyan/claude-lcm",
+  "keywords": ["context-management", "memory", "claude-code", "skill", "lcm", "dag", "sqlite"],
+  "skills": [
+    {
+      "name": "claude-lcm",
+      "entrypoint": ".claude/skills/claude-lcm/SKILL.md",
+      "description": "Lossless context management with hierarchical DAG summaries, FTS search, and session checkpoints"
+    }
+  ],
+  "scripts": {
+    "init": "python3 scripts/lcm_init.py",
+    "ingest": "python3 scripts/lcm_ingest.py",
+    "status": "python3 scripts/lcm_status.py",
+    "compact": "python3 scripts/lcm_compact.py",
+    "grep": "python3 scripts/lcm_grep.py",
+    "describe": "python3 scripts/lcm_describe.py",
+    "expand": "python3 scripts/lcm_expand.py",
+    "expand-query": "python3 scripts/lcm_expand_query.py",
+    "checkpoint": "python3 scripts/lcm_checkpoint.py",
+    "resume": "python3 scripts/lcm_resume.py",
+    "llm-map": "python3 scripts/lcm_llm_map.py",
+    "agentic-map": "python3 scripts/lcm_agentic_map.py"
+  },
+  "prerequisites": {
+    "python3": ">=3.8",
+    "claude": "CLI on PATH"
+  }
+}
