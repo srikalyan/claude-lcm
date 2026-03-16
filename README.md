@@ -49,23 +49,23 @@ See [`.claude/skills/claude-lcm/references/architecture.md`](.claude/skills/clau
 
 ## Installation
 
-### As a Claude Code skill (recommended)
+### Via Claude Code Plugin Marketplace (recommended)
 
 ```bash
-# Copy the skill into your global Claude Code skills directory
-cp -r .claude/skills/claude-lcm ~/.claude/skills/
+# In Claude Code, add the marketplace
+/plugin marketplace add srikalyan/claude-lcm
 
-# Copy scripts to a location on your PATH (or reference them directly)
-cp -r scripts/ ~/.claude-lcm/scripts/
+# Install the plugin
+/plugin install claude-lcm@claude-lcm
 ```
 
-Claude Code will auto-discover the skill. Invoke it with `/claude-lcm` or describe your need naturally — Claude will load the skill when context management is relevant.
-
-### Alternatively: project-scoped
+### Manual installation
 
 ```bash
-# For a specific project only
-cp -r .claude/skills/claude-lcm /your/project/.claude/skills/
+# Clone and run the install script
+git clone https://github.com/srikalyan/claude-lcm.git
+cd claude-lcm
+./install.sh
 ```
 
 ### Prerequisites
