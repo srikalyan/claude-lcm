@@ -156,7 +156,7 @@ class PluginStructureTest:
         readme = ROOT / "README.md"
         content = readme.read_text()
 
-        self.assert_true("claude-marketplace" in content, "README references marketplace")
+        self.assert_true("srikalyan-marketplace" in content, "README references marketplace")
         self.assert_true("python3 scripts/" in content, "README uses python3 commands")
 
     def run_all(self):

@@ -53,10 +53,10 @@ See [`.claude/skills/claude-lcm/references/architecture.md`](.claude/skills/clau
 
 ```bash
 # In Claude Code, add the marketplace
-/plugin marketplace add srikalyan/claude-marketplace
+/plugin marketplace add srikalyan/srikalyan-marketplace
 
 # Install the plugin
-/plugin install claude-lcm@claude-marketplace
+/plugin install claude-lcm@srikalyan-marketplace
 ```
 
 ### Manual installation
