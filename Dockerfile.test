@@ -1,0 +1,10 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Copy only what's needed
+COPY scripts/ scripts/
+COPY tests/ tests/
+
+# Run smoke test + benchmarks
+CMD ["sh", "-c", "python3 tests/smoke_test.py && echo '' && python3 tests/benchmark.py"]
