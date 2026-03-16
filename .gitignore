@@ -1,0 +1,25 @@
+# LCM runtime data
+~/.claude-lcm/
+*.db
+*.db-wal
+*.db-shm
+session.env
+
+# Checkpoint files (generated per-session)
+.lcm-checkpoint.md
+
+# Local planning files
+roadmap.md
+progress.md
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Editor
+*.swp
+*.swo
+*~
