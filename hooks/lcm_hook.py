@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""LCM hook handler — ingests events into the immutable store.
+
+Called by hooks.json for each Claude Code event.
+Usage: python3 lcm_hook.py <action>
+
+Actions:
+  session-start   — Initialize or resume LCM session
+  ingest-user     — Ingest user prompt
+  ingest-tool     — Ingest tool use (PostToolUse)
+  stop            — Ingest final response, check thresholds, checkpoint
+"""
+
+import json
+import os
+import sys
+from pathlib import Path
+
+# Find scripts directory relative to this hook
+PLUGIN_ROOT = os.environ.get("CLAUDE_PLUGIN_ROOT", str(Path(__file__).parent.parent))
+SCRIPTS_DIR = os.path.join(PLUGIN_ROOT, "scripts")
+sys.path.insert(0, SCRIPTS_DIR)
+
+
+def ok(message=None, suppress=True):
+    """Return success response to Claude Code."""
+    resp = {"continue": True, "suppressOutput": suppress}
+    if message:
+        resp["systemMessage"] = message
+    print(json.dumps(resp))
+    sys.exit(0)
+
+
+def read_stdin():
+    """Read hook input JSON from stdin."""
+    try:
+        return json.loads(sys.stdin.read())
+    except (json.JSONDecodeError, EOFError):
+        return {}
+
+
+def ensure_session():
+    """Ensure LCM session exists, return True if ready."""
+    import lcm_common
+    lcm_common.load_session_env()
+
+    db_path = lcm_common.get_db_path()
+    if not os.path.isfile(db_path):
+        return False
+
+    conv_id = os.environ.get("LCM_CONVERSATION_ID", "")
+    return bool(conv_id)
+
+
+def handle_session_start():
+    """Initialize or resume LCM session."""
+    import lcm_common
+    lcm_common.load_session_env()
+
+    db_path = lcm_common.get_db_path()
+    checkpoint = os.path.join(os.environ.get("CLAUDE_PROJECT_DIR", "."), ".lcm-checkpoint.md")
+
+    if os.path.isfile(checkpoint) and os.path.isfile(db_path):
+        # Resume from checkpoint
+        import lcm_resume
+        sys.argv = ["lcm_resume", "--checkpoint", checkpoint]
+        try:
+            lcm_resume.main()
+            ok("LCM session resumed from checkpoint.")
+        except SystemExit:
+            pass
+        ok("LCM session resumed.")
+    elif not os.path.isfile(db_path) or not os.environ.get("LCM_CONVERSATION_ID"):
+        # Initialize new session
+        import lcm_init
+        sys.argv = ["lcm_init"]
+        try:
+            lcm_init.main()
+        except SystemExit:
+            pass
+        lcm_common.load_session_env()
+        ok("LCM session initialized.")
+    else:
+        ok()
+
+
+def handle_ingest_user():
+    """Ingest user prompt into immutable store."""
+    if not ensure_session():
+        ok()
+        return
+
+    data = read_stdin()
+    user_prompt = data.get("user_prompt", "")
+    if not user_prompt:
+        ok()
+        return
+
+    import lcm_ingest
+    sys.argv = ["lcm_ingest", "--role", "user", "--content", user_prompt]
+    try:
+        lcm_ingest.main()
+    except SystemExit:
+        pass
+    ok()
+
+
+def handle_ingest_tool():
+    """Ingest tool use + result into immutable store."""
+    if not ensure_session():
+        ok()
+        return
+
+    data = read_stdin()
+    tool_name = data.get("tool_name", "unknown")
+    tool_input = data.get("tool_input", {})
+    tool_result = data.get("tool_result", "")
+
+    # Build a compact representation of the tool use
+    # Truncate large tool results to avoid bloating the store
+    input_str = json.dumps(tool_input, indent=None)
+    if len(input_str) > 2000:
+        input_str = input_str[:2000] + "...(truncated)"
+
+    result_str = str(tool_result)
+    if len(result_str) > 5000:
+        result_str = result_str[:5000] + "...(truncated)"
+
+    content = f"[Tool: {tool_name}]\nInput: {input_str}\nResult: {result_str}"
+
+    import lcm_ingest
+    sys.argv = ["lcm_ingest", "--role", "tool", "--content", content]
+    try:
+        lcm_ingest.main()
+    except SystemExit:
+        pass
+    ok()
+
+
+def handle_stop():
+    """On stop: check context health, auto-compact if needed, write checkpoint."""
+    if not ensure_session():
+        ok()
+        return
+
+    import lcm_common
+    lcm_common.load_session_env()
+
+    # Ingest the stop reason/response if provided
+    data = read_stdin()
+    reason = data.get("reason", "")
+    if reason:
+        import lcm_ingest
+        sys.argv = ["lcm_ingest", "--role", "assistant", "--content", reason]
+        try:
+            lcm_ingest.main()
+        except SystemExit:
+            pass
+
+    # Check if compaction is needed
+    con = lcm_common.get_connection()
+    conv_id = lcm_common.get_conversation_id()
+
+    total_tokens = con.execute(
+        """
+        SELECT COALESCE(SUM(CASE
+            WHEN ci.item_type = 'message' THEN m.token_count
+            WHEN ci.item_type = 'summary' THEN s.token_count
+            ELSE 0
+        END), 0)
+        FROM context_items ci
+        LEFT JOIN messages m ON ci.item_type = 'message' AND ci.item_id = m.id
+        LEFT JOIN summaries s ON ci.item_type = 'summary' AND ci.item_id = s.id
+        WHERE ci.conversation_id = ?
+        """,
+        (conv_id,),
+    ).fetchone()[0]
+
+    threshold = int(lcm_common.get_config_int("LCM_TOKEN_BUDGET") *
+                    lcm_common.get_config_float("LCM_CONTEXT_THRESHOLD"))
+    con.close()
+
+    if total_tokens > threshold:
+        # Auto-compact
+        import lcm_compact
+        sys.argv = ["lcm_compact"]
+        try:
+            lcm_compact.main()
+        except SystemExit:
+            pass
+
+    # Write checkpoint
+    project_dir = os.environ.get("CLAUDE_PROJECT_DIR", ".")
+    checkpoint_path = os.path.join(project_dir, ".lcm-checkpoint.md")
+
+    import lcm_checkpoint
+    sys.argv = ["lcm_checkpoint", "--output", checkpoint_path]
+    try:
+        lcm_checkpoint.main()
+    except SystemExit:
+        pass
+
+    ok()
+
+
+def main():
+    if len(sys.argv) < 2:
+        ok()
+        return
+
+    action = sys.argv[1]
+    handlers = {
+        "session-start": handle_session_start,
+        "ingest-user": handle_ingest_user,
+        "ingest-tool": handle_ingest_tool,
+        "stop": handle_stop,
+    }
+
+    handler = handlers.get(action)
+    if handler:
+        try:
+            handler()
+        except Exception as e:
+            # Never block Claude Code on hook errors
+            ok(f"LCM hook error ({action}): {e}")
+    else:
+        ok()
+
+
+if __name__ == "__main__":
+    main()
