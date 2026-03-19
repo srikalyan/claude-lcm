@@ -46,8 +46,8 @@ class PluginStructureTest:
         self.assert_equal(data["name"], "claude-lcm", "plugin name is 'claude-lcm'")
         self.assert_true("description" in data, "plugin.json has 'description' field")
         self.assert_true(len(data["description"]) > 20, "description is meaningful (>20 chars)")
-        self.assert_true("source" in data, "plugin.json has 'source' field")
-        self.assert_true("homepage" in data, "plugin.json has 'homepage' field")
+        self.assert_true("version" in data, "plugin.json has 'version' field")
+        self.assert_true("author" in data, "plugin.json has 'author' field")
 
     def test_skills_directory(self):
         print("\n── Test: skills directory ──")
