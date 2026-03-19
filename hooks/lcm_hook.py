@@ -52,6 +52,19 @@ def ensure_session():
     return bool(conv_id)
 
 
+def persist_env_vars():
+    """Write LCM env vars to CLAUDE_ENV_FILE so Claude can use them in Bash calls."""
+    env_file = os.environ.get("CLAUDE_ENV_FILE", "")
+    if not env_file:
+        return
+
+    with open(env_file, "a") as f:
+        f.write(f'export LCM_SCRIPTS="{SCRIPTS_DIR}"\n')
+        f.write(f'export LCM_DB="{os.environ.get("LCM_DB", "")}"\n')
+        f.write(f'export LCM_CONVERSATION_ID="{os.environ.get("LCM_CONVERSATION_ID", "")}"\n')
+        f.write(f'export LCM_SESSION_ID="{os.environ.get("LCM_SESSION_ID", "")}"\n')
+
+
 def handle_session_start():
     """Initialize or resume LCM session."""
     import lcm_common
@@ -66,10 +79,11 @@ def handle_session_start():
         sys.argv = ["lcm_resume", "--checkpoint", checkpoint]
         try:
             lcm_resume.main()
-            ok("LCM session resumed from checkpoint.")
         except SystemExit:
             pass
-        ok("LCM session resumed.")
+        lcm_common.load_session_env()
+        persist_env_vars()
+        ok("LCM session resumed from checkpoint.")
     elif not os.path.isfile(db_path) or not os.environ.get("LCM_CONVERSATION_ID"):
         # Initialize new session
         import lcm_init
@@ -79,8 +93,10 @@ def handle_session_start():
         except SystemExit:
             pass
         lcm_common.load_session_env()
+        persist_env_vars()
         ok("LCM session initialized.")
     else:
+        persist_env_vars()
         ok()
 
 
