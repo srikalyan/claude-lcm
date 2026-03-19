@@ -44,12 +44,26 @@ Read `references/architecture.md` for the full DAG and compaction design.
 Read `references/tools.md` for tool interface specifications.
 Read `references/prompts.md` for depth-aware summarization prompts.
 
+## Script Location
+
+All LCM scripts live in the plugin's `scripts/` directory. Set this variable first:
+
+```bash
+LCM="$CLAUDE_PLUGIN_ROOT/scripts"
+```
+
+If running from a local clone instead of a plugin install, use:
+
+```bash
+LCM="/path/to/claude-lcm/scripts"
+```
+
 ## Quick Start
 
 ### Initialize for a new session
 
 ```bash
-python3 scripts/lcm_init.py
+python3 "$LCM/lcm_init.py"
 ```
 
 This creates `~/.claude-lcm/lcm.db` with the full schema and prints the session ID.
@@ -57,7 +71,7 @@ This creates `~/.claude-lcm/lcm.db` with the full schema and prints the session 
 ### Check context health
 
 ```bash
-python3 scripts/lcm_status.py
+python3 "$LCM/lcm_status.py"
 ```
 
 Prints: message count, estimated token usage, compaction threshold status, and whether
@@ -66,7 +80,7 @@ a compaction pass is recommended.
 ### Compact context
 
 ```bash
-python3 scripts/lcm_compact.py
+python3 "$LCM/lcm_compact.py"
 ```
 
 Runs a leaf compaction pass over messages outside the fresh tail. If summaries are
@@ -75,14 +89,14 @@ accumulating, also runs a condensation pass.
 ### Search history
 
 ```bash
-python3 scripts/lcm_grep.py "database migration"
-python3 scripts/lcm_grep.py "config threshold" --scope summaries
+python3 "$LCM/lcm_grep.py" "database migration"
+python3 "$LCM/lcm_grep.py" "config threshold" --scope summaries
 ```
 
 ### Expand a summary
 
 ```bash
-python3 scripts/lcm_expand.py sum_abc123
+python3 "$LCM/lcm_expand.py" sum_abc123
 ```
 
 Returns the source messages behind a summary node. **Sub-agent only** — main agent
@@ -91,7 +105,7 @@ should use `lcm_expand_query.py` instead.
 ### Process a dataset (LLM-Map)
 
 ```bash
-python3 scripts/lcm_llm_map.py \
+python3 "$LCM/lcm_llm_map.py" \
   --input data.jsonl \
   --output results.jsonl \
   --prompt "Extract entities from this text" \
@@ -102,7 +116,7 @@ python3 scripts/lcm_llm_map.py \
 ### Process with multi-step reasoning (Agentic-Map)
 
 ```bash
-python3 scripts/lcm_agentic_map.py \
+python3 "$LCM/lcm_agentic_map.py" \
   --input tasks.jsonl \
   --output results.jsonl \
   --prompt "Analyze this codebase" \
@@ -155,13 +169,13 @@ Each level uses a different summarization prompt strategy (see `references/promp
 Before ending a long session, always write a checkpoint:
 
 ```bash
-python3 scripts/lcm_checkpoint.py
+python3 "$LCM/lcm_checkpoint.py"
 ```
 
 This writes `.lcm-checkpoint.md` to the workspace root. On resume:
 
 ```bash
-python3 scripts/lcm_resume.py
+python3 "$LCM/lcm_resume.py"
 ```
 
 Reads the checkpoint and reconstructs working state from the immutable store.

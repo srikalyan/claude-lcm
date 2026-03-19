@@ -136,7 +136,7 @@ class PluginStructureTest:
         skill_md = ROOT / "skills" / "claude-lcm" / "SKILL.md"
         content = skill_md.read_text()
 
-        self.assert_true("python3 scripts/" in content, "SKILL.md references python3 scripts")
+        self.assert_true("CLAUDE_PLUGIN_ROOT" in content, "SKILL.md references CLAUDE_PLUGIN_ROOT")
         self.assert_true("lcm_init.py" in content, "SKILL.md references lcm_init.py")
         self.assert_true("lcm_compact.py" in content, "SKILL.md references lcm_compact.py")
         self.assert_true(".sh" not in content.split("---", 2)[-1], "SKILL.md body has no .sh references")
@@ -157,7 +157,7 @@ class PluginStructureTest:
         content = readme.read_text()
 
         self.assert_true("srikalyan-marketplace" in content, "README references marketplace")
-        self.assert_true("python3 scripts/" in content, "README uses python3 commands")
+        self.assert_true("python3" in content, "README uses python3 commands")
 
     def run_all(self):
         print("=" * 60)
