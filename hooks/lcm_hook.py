@@ -11,6 +11,7 @@ Actions:
   stop            — Ingest final response, check thresholds, checkpoint
 """
 
+import io
 import json
 import os
 import sys
@@ -23,7 +24,10 @@ sys.path.insert(0, SCRIPTS_DIR)
 
 
 def ok(message=None, suppress=True):
-    """Return success response to Claude Code."""
+    """Return success response to Claude Code.
+
+    This MUST be the only thing printed to stdout.
+    """
     resp = {"continue": True, "suppressOutput": suppress}
     if message:
         resp["systemMessage"] = message
@@ -37,6 +41,21 @@ def read_stdin():
         return json.loads(sys.stdin.read())
     except (json.JSONDecodeError, EOFError):
         return {}
+
+
+def quiet_call(func, argv):
+    """Call a script's main() with stdout suppressed so it doesn't pollute hook output."""
+    old_stdout = sys.stdout
+    old_argv = sys.argv
+    try:
+        sys.stdout = io.StringIO()
+        sys.argv = argv
+        func()
+    except SystemExit:
+        pass
+    finally:
+        sys.stdout = old_stdout
+        sys.argv = old_argv
 
 
 def ensure_session():
@@ -74,24 +93,14 @@ def handle_session_start():
     checkpoint = os.path.join(os.environ.get("CLAUDE_PROJECT_DIR", "."), ".lcm-checkpoint.md")
 
     if os.path.isfile(checkpoint) and os.path.isfile(db_path):
-        # Resume from checkpoint
         import lcm_resume
-        sys.argv = ["lcm_resume", "--checkpoint", checkpoint]
-        try:
-            lcm_resume.main()
-        except SystemExit:
-            pass
+        quiet_call(lcm_resume.main, ["lcm_resume", "--checkpoint", checkpoint])
         lcm_common.load_session_env()
         persist_env_vars()
         ok("LCM session resumed from checkpoint.")
     elif not os.path.isfile(db_path) or not os.environ.get("LCM_CONVERSATION_ID"):
-        # Initialize new session
         import lcm_init
-        sys.argv = ["lcm_init"]
-        try:
-            lcm_init.main()
-        except SystemExit:
-            pass
+        quiet_call(lcm_init.main, ["lcm_init"])
         lcm_common.load_session_env()
         persist_env_vars()
         ok("LCM session initialized.")
@@ -113,11 +122,7 @@ def handle_ingest_user():
         return
 
     import lcm_ingest
-    sys.argv = ["lcm_ingest", "--role", "user", "--content", user_prompt]
-    try:
-        lcm_ingest.main()
-    except SystemExit:
-        pass
+    quiet_call(lcm_ingest.main, ["lcm_ingest", "--role", "user", "--content", user_prompt])
     ok()
 
 
@@ -132,8 +137,6 @@ def handle_ingest_tool():
     tool_input = data.get("tool_input", {})
     tool_result = data.get("tool_result", "")
 
-    # Build a compact representation of the tool use
-    # Truncate large tool results to avoid bloating the store
     input_str = json.dumps(tool_input, indent=None)
     if len(input_str) > 2000:
         input_str = input_str[:2000] + "...(truncated)"
@@ -145,11 +148,7 @@ def handle_ingest_tool():
     content = f"[Tool: {tool_name}]\nInput: {input_str}\nResult: {result_str}"
 
     import lcm_ingest
-    sys.argv = ["lcm_ingest", "--role", "tool", "--content", content]
-    try:
-        lcm_ingest.main()
-    except SystemExit:
-        pass
+    quiet_call(lcm_ingest.main, ["lcm_ingest", "--role", "tool", "--content", content])
     ok()
 
 
@@ -162,16 +161,11 @@ def handle_stop():
     import lcm_common
     lcm_common.load_session_env()
 
-    # Ingest the stop reason/response if provided
     data = read_stdin()
     reason = data.get("reason", "")
     if reason:
         import lcm_ingest
-        sys.argv = ["lcm_ingest", "--role", "assistant", "--content", reason]
-        try:
-            lcm_ingest.main()
-        except SystemExit:
-            pass
+        quiet_call(lcm_ingest.main, ["lcm_ingest", "--role", "assistant", "--content", reason])
 
     # Check if compaction is needed
     con = lcm_common.get_connection()
@@ -197,24 +191,15 @@ def handle_stop():
     con.close()
 
     if total_tokens > threshold:
-        # Auto-compact
         import lcm_compact
-        sys.argv = ["lcm_compact"]
-        try:
-            lcm_compact.main()
-        except SystemExit:
-            pass
+        quiet_call(lcm_compact.main, ["lcm_compact"])
 
     # Write checkpoint
     project_dir = os.environ.get("CLAUDE_PROJECT_DIR", ".")
     checkpoint_path = os.path.join(project_dir, ".lcm-checkpoint.md")
 
     import lcm_checkpoint
-    sys.argv = ["lcm_checkpoint", "--output", checkpoint_path]
-    try:
-        lcm_checkpoint.main()
-    except SystemExit:
-        pass
+    quiet_call(lcm_checkpoint.main, ["lcm_checkpoint", "--output", checkpoint_path])
 
     ok()
 
@@ -237,7 +222,6 @@ def main():
         try:
             handler()
         except Exception as e:
-            # Never block Claude Code on hook errors
             ok(f"LCM hook error ({action}): {e}")
     else:
         ok()

@@ -1,6 +1,6 @@
 {
   "name": "claude-lcm",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Lossless Context Management for Claude Code — deterministic, DAG-backed memory for long agentic sessions using SQLite. Implements the LCM paper (Voltropy, Feb 2026).",
   "author": {
     "name": "srikalyan"
